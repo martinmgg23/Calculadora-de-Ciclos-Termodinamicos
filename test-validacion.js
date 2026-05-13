@@ -31,7 +31,7 @@
  * ============================================================================
  */
 
-const TC = require('/home/claude/thermo-cycles.js');
+const TC = require('./thermo-cycles.js');
 
 const TOL = 0.005;   // 0.5 %
 
@@ -140,11 +140,48 @@ const eta_teo = 1 - 1 / Math.pow(6.3, 0.4);
 console.log(`   η_teórico = 1 - 1/r^(k-1) = ${eta_teo.toFixed(6)}`);
 console.log(`   Diferencia con referencia: ${((eta_teo - expected.eta) / expected.eta * 100).toFixed(4)} %`);
 
-// -------- Veredicto --------------------------------------------------------
+// ============================================================================
+//  SUITE DE ALERTAS — casos degenerados
+// ============================================================================
 console.log('\n═══════════════════════════════════════════════════════════════════════════════');
-console.log(allOk
-    ? ' ✓ VALIDACIÓN APROBADA — todos los parámetros dentro del 0.5 % de tolerancia.'
-    : ' ✗ VALIDACIÓN RECHAZADA — uno o más parámetros superan el 0.5 % de tolerancia.'
+console.log(' VALIDACIÓN DE ALERTAS — casos degenerados');
+console.log('═══════════════════════════════════════════════════════════════════════════════');
+
+function expectAlert(label, runInput, expectedField) {
+    const res = TC.computeCycle(runInput);
+    const hasErr = res.alerts.some(a => a.level === 'error' && a.field === expectedField);
+    const isDeg  = res.degenerate === true;
+    const ok = hasErr && isDeg;
+    console.log(`  ${ok ? '✓' : '✗'}  ${label.padEnd(45)}  degenerate=${isDeg}  alert(${expectedField})=${hasErr}`);
+    return ok;
+}
+
+const baseInput = {
+    cycle:'otto', altitude:0, altitudeUnit:'m', k:1.4,
+    fuel:'gasoline', lambda:1.0, r:10, nCyl:4,
+    power:100, powerUnit:'HP', rpm:5000, strokes:4, S_over_D:1.0
+};
+
+let alertsOk = true;
+alertsOk &= expectAlert('r = 1 dispara alerta crítica',
+    { ...baseInput, r: 1 }, 'r');
+alertsOk &= expectAlert('r = 0.5 (absurdo) dispara alerta crítica',
+    { ...baseInput, r: 0.5 }, 'r');
+alertsOk &= expectAlert('PCI = 0 → q_in = 0 dispara alerta crítica',
+    { ...baseInput, fuel: { nC: 8, nH: 18, PCI: 0 } }, 'qIn');
+
+// Caso normal: no debe disparar errores (warnings sí están permitidos)
+const normal = TC.computeCycle(baseInput);
+const noErrors = !normal.alerts.some(a => a.level === 'error');
+console.log(`  ${noErrors ? '✓' : '✗'}  ${'caso normal no dispara errores'.padEnd(45)}  errores=${!noErrors}`);
+alertsOk &= noErrors;
+
+// -------- Veredicto final --------------------------------------------------
+const finalOk = allOk && alertsOk;
+console.log('\n═══════════════════════════════════════════════════════════════════════════════');
+console.log(finalOk
+    ? ' ✓ VALIDACIÓN APROBADA — caso de referencia (±0.5 %) y alertas correctas.'
+    : ' ✗ VALIDACIÓN RECHAZADA — fallaron tolerancia y/o alertas.'
 );
 console.log('═══════════════════════════════════════════════════════════════════════════════');
-process.exit(allOk ? 0 : 1);
+process.exit(finalOk ? 0 : 1);

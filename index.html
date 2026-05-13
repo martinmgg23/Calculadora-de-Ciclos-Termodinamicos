@@ -131,6 +131,13 @@ button.primary:active { transform: translateY(0); }
     display: flex; gap: 12px; align-items: flex-start; }
 .alert::before { content: '⚠'; color: var(--warn); font-size: 16px; line-height: 1.2; }
 .alert strong { color: var(--warn); }
+.alert.alert-error {
+    background: linear-gradient(90deg, rgba(255,59,48,0.18), rgba(255,59,48,0.06));
+    border-left-width: 4px;
+    box-shadow: 0 0 0 1px rgba(255,59,48,0.25);
+}
+.alert.alert-error::before { content: '⛔'; }
+.alert.alert-error strong { color: #ff5b51; }
 
 .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 12px; margin-bottom: 24px; }
@@ -283,7 +290,7 @@ table.states td.state-id { color: var(--accent); font-weight: 700; }
 
         <div class="field">
             <label for="r">Relación de compresión r</label>
-            <input type="number" id="r" value="10" min="2" max="30" step="0.1">
+            <input type="number" id="r" value="10" min="0.5" max="30" step="0.1">
         </div>
 
         <div class="field">
@@ -648,8 +655,28 @@ function compute(inp) {
     const atm = isaAtmosphere(inp.altitude_m);
     const air = airProperties(inp.k);
     const { qIn, AFR_st, AFR_real } = heatInputPerKgAir(inp.fuel, inp.lambda);
-    const s1 = { T: atm.T, p: atm.p };
 
+    // --- Pre-validación: r ≤ 1 o q_in ≤ 0 degeneran el ciclo ---
+    const alerts = [];
+    if (inp.r <= 1) {
+        alerts.push({
+            level: 'error',
+            message: `Relación de compresión r = ${inp.r}. Con r ≤ 1 no hay compresión y el ciclo se degenera (w_neto = 0, PME = 0). Aumentar r por encima de 1 para obtener trabajo útil.`
+        });
+    }
+    if (qIn <= 0) {
+        alerts.push({
+            level: 'error',
+            message: `Calor aportado q_in = ${qIn.toFixed(1)} J/kg. Sin aporte de calor no hay combustión y el ciclo se degenera (T₃ = T₂, w_neto = 0). Verificar combustible, λ y PCI.`
+        });
+    }
+    if (alerts.some(a => a.level === 'error')) {
+        return { atm, air, qIn, AFR_st, AFR_real,
+                 otto: null, diesel: null, sabathe: null,
+                 active: null, sizing: null, alerts, inp, degenerate: true };
+    }
+
+    const s1 = { T: atm.T, p: atm.p };
     const otto = ottoCycle(s1, inp.r, qIn, air);
     const diesel = dieselCycle(s1, inp.r, qIn, air);
     const qV = isFinite(inp.qV) && inp.qV > 0 ? Math.min(inp.qV, qIn) : qIn * 0.5;
@@ -658,12 +685,17 @@ function compute(inp) {
     const active = inp.cycle === 'otto' ? otto : inp.cycle === 'diesel' ? diesel : sabathe;
     const sizing = engineSizing(active.pme, inp.power_W, inp.nCyl, inp.rpm, inp.strokes, inp.S_over_D);
 
-    const alerts = [];
     if (active.pmax * CONST.PA_TO_BAR > CONST.PMAX_ALERT_BAR) {
-        alerts.push(`Presión máxima ${(active.pmax * CONST.PA_TO_BAR).toFixed(1)} bar supera ${CONST.PMAX_ALERT_BAR} bar. Revisar los valores de entrada.`);
+        alerts.push({
+            level: 'warning',
+            message: `Presión máxima ${(active.pmax * CONST.PA_TO_BAR).toFixed(1)} bar supera ${CONST.PMAX_ALERT_BAR} bar. Revisar los valores de entrada.`
+        });
     }
     if (active.Tmax > CONST.TMAX_ALERT_K) {
-        alerts.push(`Temperatura máxima ${active.Tmax.toFixed(0)} K supera ${CONST.TMAX_ALERT_K} K. Revisar los valores de entrada.`);
+        alerts.push({
+            level: 'warning',
+            message: `Temperatura máxima ${active.Tmax.toFixed(0)} K supera ${CONST.TMAX_ALERT_K} K. Revisar los valores de entrada.`
+        });
     }
     return { atm, air, qIn, AFR_st, AFR_real, otto, diesel, sabathe, active, sizing, alerts, inp };
 }
@@ -671,11 +703,26 @@ function compute(inp) {
 function fmt(x, d) { return Number.isFinite(x) ? x.toFixed(d) : '—'; }
 
 function renderAlerts(arr) {
-    $('alerts-container').innerHTML = arr.map(m =>
-        `<div class="alert"><div><strong>ALERTA</strong> · ${m}</div></div>`).join('');
+    $('alerts-container').innerHTML = arr.map(a => {
+        const isErr = a.level === 'error';
+        const cls   = isErr ? 'alert alert-error' : 'alert';
+        const tag   = isErr ? 'ERROR' : 'ALERTA';
+        return `<div class="${cls}"><div><strong>${tag}</strong> · ${a.message}</div></div>`;
+    }).join('');
+}
+
+function renderEmpty() {
+    // Borrar KPIs, tabla y dimensionamiento cuando el cálculo está degenerado
+    $('kpi-grid').innerHTML = '';
+    $('states-table').innerHTML = '';
+    $('sizing-grid').innerHTML = '';
+    $('dim-data').innerHTML = '';
+    if (pvChart) { pvChart.destroy(); pvChart = null; $('chart-pv').innerHTML = ''; }
+    if (tsChart) { tsChart.destroy(); tsChart = null; $('chart-ts').innerHTML = ''; }
 }
 
 function renderKPIs(R) {
+    if (!R.active) { $('kpi-grid').innerHTML = ''; return; }
     const A = R.active;
     const pmax_bar = A.pmax * CONST.PA_TO_BAR;
     const warn_p = pmax_bar > CONST.PMAX_ALERT_BAR ? 'warn' : '';
@@ -888,9 +935,13 @@ function run() {
     try {
         const inp = readInputs();
         if (!isFinite(inp.altitude_m) || inp.altitude_m < -500 || inp.altitude_m > 20000) return;
-        if (inp.lambda <= 0 || inp.r <= 1 || inp.nCyl < 1 || inp.power_W <= 0 || inp.rpm <= 0) return;
+        if (inp.lambda <= 0 || inp.nCyl < 1 || inp.power_W <= 0 || inp.rpm <= 0) return;
         const R = compute(inp);
         renderAlerts(R.alerts);
+        if (R.degenerate) {
+            renderEmpty();
+            return;
+        }
         renderKPIs(R);
         renderStates(R);
         renderSizing(R);

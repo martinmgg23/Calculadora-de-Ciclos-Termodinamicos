@@ -19,12 +19,13 @@ El propósito de mantener esta bitácora es:
 
 ## Estructura del desarrollo
 
-El proyecto se construyó en **cuatro etapas iterativas**, cada una con un prompt acotado y un entregable verificable:
+El proyecto se construyó en **cinco etapas iterativas**, cada una con un prompt acotado y un entregable verificable:
 
 1. **Especificación del módulo de cálculo**
 2. **Validación numérica contra caso de referencia**
 3. **Construcción de la interfaz HTML**
 4. **Documentación del repositorio**
+5. **Endurecimiento del manejo de entradas degeneradas**
 
 ---
 
@@ -175,6 +176,53 @@ Producir documentación profesional, lista para publicar:
 
 ---
 
+## Prompt 5 — Endurecimiento del manejo de entradas degeneradas
+
+### Prompt original
+
+> **Agregar alarmas para los casos en los que la relación de compresión es 1 y el calor ingresado sea 0.**
+
+### Intención
+
+Cubrir dos casos de uso problemáticos detectados durante el uso real de la herramienta:
+
+1. **r = 1**: el usuario podría tipear este valor por curiosidad o error. Matemáticamente, $\eta_{Otto} = 1 - r^{-(k-1)} = 0$, todos los estados coinciden, w_neto = 0 y la PME = 0 → división por cero en el dimensionamiento del motor.
+
+2. **q_in = 0**: ocurre si se ingresa PCI = 0 en un combustible custom, o si λ se hace muy grande. Sin aporte de calor el ciclo se degenera (T₃ = T₂) → w_neto = 0 → división por cero en el dimensionamiento.
+
+Sin estas alertas, el sistema mostraba valores `NaN` / `Infinity` o gráficos vacíos sin explicación.
+
+### Decisiones de diseño tomadas
+
+- **Dos niveles de alerta** (`error` vs `warning`) en lugar de uno solo. Errores bloquean el cálculo y vacían los paneles; warnings dejan ver el resultado.
+- **Pre-validación en `computeCycle`**: detectar `r ≤ 1` y `qIn ≤ 0` **antes** de invocar `ottoCycle`/`dieselCycle`/`sabatheCycle`, devolviendo un objeto con `degenerate: true`.
+- **Generalización a r < 1**: la condición es `r ≤ 1` y no `r === 1` exacto, porque r < 1 es físicamente absurdo (expansión en lugar de compresión).
+- **Mensajes pedagógicos**: cada alerta explica *por qué* el cálculo se aborta, en lugar de un mensaje genérico tipo "entrada inválida".
+- **Distinción visual en UI**: errores en rojo intenso con icono ⛔, warnings en rojo apagado con icono ⚠.
+- **Permitir tipear r < 2**: el atributo `min` del input se bajó de 2 a 0.5 para que el usuario pueda *escribir* el caso degenerado y ver la alerta, en lugar de que el navegador la rechace silenciosamente.
+
+### Entregable
+
+- `thermo-cycles.js`:
+  - `checkAlerts(result, ctx)` ahora acepta contexto opcional `{ r, qIn }` y devuelve alertas con `level: 'error' | 'warning'` y `field` identificable.
+  - `computeCycle` realiza pre-validación y retorna `{ degenerate: true, alerts: [...] }` sin invocar los cálculos de ciclo.
+- `index.html`:
+  - `compute()` replica la pre-validación.
+  - `renderAlerts` distingue estilos error vs warning.
+  - `renderEmpty()` limpia KPIs, tabla, dimensionamiento y gráficos cuando hay degeneración.
+  - `run()` invoca `renderEmpty()` y retorna temprano si `R.degenerate`.
+- `test-validacion.js`:
+  - Nueva suite "VALIDACIÓN DE ALERTAS" con 4 casos: `r=1`, `r=0.5`, `PCI=0`, caso normal.
+  - Veredicto final exige que pase el test de referencia **y** todos los casos de alerta.
+
+### No-regresión
+
+El caso de referencia (Otto, 8000 ft, heptano, r=6.3, λ=1.1) sigue dando η = 0.521079 con error 0.00%. Confirmado por ejecución del test final.
+
+---
+
+
+
 ## Patrones de prompting que funcionaron
 
 Algunas observaciones útiles para futuros desarrollos asistidos por IA:
@@ -190,6 +238,8 @@ Algunas observaciones útiles para futuros desarrollos asistidos por IA:
 - **Convenciones de λ**: existen dos convenciones (riqueza vs riqueza inversa). El módulo asumió una, la referencia usaba otra notación (F = fuel/aire) pero la misma convención de fondo. Siempre conviene aclarar la convención de mezcla explícitamente.
 - **PCI de combustibles**: no es una constante universal — varía 1-2% entre fuentes. Si se requiere coincidencia exacta con una referencia, hay que sincronizar este valor primero.
 - **Aire estándar frío vs caliente**: el modelo es estrictamente con k constante. Para análisis de mayor precisión hay que migrar a k(T), lo que cambia la estructura del cálculo (los estados ya no salen de fórmulas cerradas).
+- **Casos degenerados (Prompt 5)**: pedir alertas explícitas para casos físicamente nulos (r=1, q_in=0) resultó más útil que dejar que el cálculo arroje `NaN`. Conviene anticipar estas alarmas desde el diseño inicial.
+- **Reproducibilidad de paths**: usar `require('/home/claude/...')` con rutas absolutas del entorno de desarrollo rompe en GitHub. Usar siempre rutas relativas (`./thermo-cycles.js`) para tests que se publican.
 
 ---
 
@@ -209,9 +259,12 @@ Para reconstruir el proyecto desde cero ante un modelo similar:
 
 4. [Prompt 4]
    → README.md + PROMPTS.md
+
+5. [Prompt 5]
+   → checkAlerts robustecido + casos degenerados cubiertos en el test
 ```
 
-Cada paso es **idempotente** y **verificable**: si el test de validación falla, el problema está en `thermo-cycles.js` y no se debe avanzar a la interfaz.
+Cada paso es **idempotente** y **verificable**: si el test de validación falla, el problema está en `thermo-cycles.js` y no se debe avanzar a la interfaz. Tras el paso 5, el test verifica tanto el caso de referencia (±0.5 %) como las cuatro alertas críticas.
 
 ---
 

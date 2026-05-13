@@ -60,9 +60,15 @@ Organizadas en tres pestañas:
 
 ### Alertas
 
-Aparece un aviso en rojo cuando:
-- **P_max > 100 bar** — sugiere revisar entradas para evitar diseños inviables.
-- **T_max > 4800 K** — supera los límites razonables del modelo de aire estándar.
+El sistema distingue dos niveles:
+
+- **⛔ Errores** (bloquean el cálculo): cuando una entrada deja al ciclo en estado degenerado se muestra una alerta crítica y el cálculo se aborta antes de generar resultados o gráficos. Los KPIs y la tabla de estados quedan vacíos hasta que se corrija la entrada.
+  - **r ≤ 1** — sin compresión no hay trabajo útil; w_neto = 0 y PME = 0.
+  - **q_in ≤ 0** — sin aporte de calor (PCI = 0 o λ → ∞) no hay combustión; T₃ = T₂.
+
+- **⚠ Advertencias** (resultado entregado, pero fuera de rango típico):
+  - **P_max > 100 bar** — diseño mecánicamente exigente; revisar r y q_in.
+  - **T_max > 4800 K** — supera los límites razonables del modelo de aire estándar.
 
 ### UX
 
@@ -185,6 +191,8 @@ Se ejecutó un test de regresión contra un caso de referencia con resultados co
 ```bash
 node test-validacion.js
 ```
+
+Adicionalmente, el test verifica que el sistema dispare correctamente las **alertas críticas** ante entradas degeneradas: `r = 1`, `r < 1` (físicamente absurdo) y `q_in = 0` (PCI nulo). El caso normal no debe disparar errores (sólo warnings opcionales).
 
 ---
 

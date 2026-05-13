@@ -413,10 +413,47 @@ const Units = Object.freeze({
 
 /* ============================================================================
  *  VERIFICACIÓN DE ALERTAS
+ *
+ *  Niveles:
+ *    'error'   → entrada inválida que invalida todo el cálculo
+ *                (p.ej. r ≤ 1 o q_in ≤ 0 → ciclo degenerado).
+ *    'warning' → resultado físicamente plausible pero fuera de los
+ *                rangos típicos de diseño (p_max > 100 bar o T_max > 4800 K).
+ *
+ *  Acepta opcionalmente el objeto de contexto { r, qIn } para chequeos
+ *  previos al cálculo. Si no se pasa, sólo se verifican los umbrales de
+ *  presión y temperatura sobre el resultado.
  * ============================================================================
  */
-function checkAlerts(result) {
+function checkAlerts(result, ctx) {
     const alerts = [];
+    ctx = ctx || {};
+
+    // --- Validaciones de entrada (errores que degeneran el ciclo) ---
+    if (Number.isFinite(ctx.r) && ctx.r <= 1) {
+        alerts.push({
+            level: 'error',
+            field: 'r',
+            message: `Relación de compresión r = ${ctx.r}. Con r ≤ 1 no hay ` +
+                     `compresión y el ciclo se degenera (w_neto = 0, PME = 0). ` +
+                     `Aumentar r por encima de 1 para obtener trabajo útil.`
+        });
+    }
+    if (Number.isFinite(ctx.qIn) && ctx.qIn <= 0) {
+        alerts.push({
+            level: 'error',
+            field: 'qIn',
+            message: `Calor aportado q_in = ${ctx.qIn.toFixed(1)} J/kg. ` +
+                     `Sin aporte de calor no hay combustión y el ciclo se ` +
+                     `degenera (T₃ = T₂, w_neto = 0). Verificar combustible, ` +
+                     `λ y PCI.`
+        });
+    }
+
+    // Si la entrada ya es inválida no tiene sentido evaluar el resultado.
+    if (alerts.some(a => a.level === 'error') || !result) return alerts;
+
+    // --- Verificación de umbrales sobre el resultado ---
     const pmax_bar = result.pmax * CONST.PA_TO_BAR;
     if (pmax_bar > CONST.PMAX_ALERT_BAR) {
         alerts.push({
@@ -497,6 +534,22 @@ function computeCycle(input) {
     // ---- 2) Calor aportado por kg de aire ---------------------------------
     const { qIn, AFR_st, AFR_real } = heatInputPerKgAir(fuel, lambda);
 
+    // ---- 2.5) Pre-validación: r ≤ 1 o q_in ≤ 0 degeneran el ciclo ---------
+    const preAlerts = checkAlerts(null, { r, qIn });
+    if (preAlerts.some(a => a.level === 'error')) {
+        return {
+            input: { ...input, altitude_m, fuelResolved: fuel },
+            atmosphere: atm,
+            airProperties: air,
+            combustion: { AFR_st, AFR_real, qIn, lambda, fuel },
+            cycles: null,
+            active: null,
+            sizing: null,
+            alerts: preAlerts,
+            degenerate: true
+        };
+    }
+
     // ---- 3) Estado inicial: condiciones atmosféricas ----------------------
     const state1 = { T: atm.T, p: atm.p };
 
@@ -527,8 +580,8 @@ function computeCycle(input) {
         Number(input.S_over_D)
     );
 
-    // ---- 7) Alertas -------------------------------------------------------
-    const alerts = checkAlerts(active);
+    // ---- 7) Alertas (umbrales sobre el resultado) -------------------------
+    const alerts = checkAlerts(active, { r, qIn });
 
     return {
         input: { ...input, altitude_m, power_W, fuelResolved: fuel },
