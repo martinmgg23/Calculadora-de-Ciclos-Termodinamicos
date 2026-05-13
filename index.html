@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cálculo de Ciclos Termodinámicos</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.54.1/dist/apexcharts.min.js"></script>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body, { delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$',  right: '$',  display: false}
+        ]});"></script>
+
+<style>
+:root {
+    --bg-0: #0c0d10; --bg-1: #15171c; --bg-2: #1c1f26; --bg-3: #252932;
+    --line: #2e3340; --line-soft: #1f232b;
+    --text-0: #e8eaed; --text-1: #a8aeba; --text-2: #6c7280;
+    --accent: #ff7a00; --accent-2: #00d4aa; --accent-3: #4d9bff;
+    --warn: #ff3b30; --warn-bg: #2a1414;
+    --otto: #ff7a00; --diesel: #4d9bff; --sabathe: #00d4aa;
+    --radius: 4px; --radius-lg: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--bg-0); color: var(--text-0); min-height: 100vh; line-height: 1.5;
+    background-image:
+        radial-gradient(circle at 15% 0%, rgba(255,122,0,0.06) 0%, transparent 35%),
+        radial-gradient(circle at 85% 100%, rgba(0,212,170,0.04) 0%, transparent 35%);
+}
+.mono { font-family: 'JetBrains Mono', monospace; }
+.app { max-width: 1600px; margin: 0 auto; padding: 32px 24px 80px; }
+
+header { border-bottom: 1px solid var(--line); padding-bottom: 24px; margin-bottom: 32px; position: relative; }
+header::before { content: '◢'; position: absolute; top: 0; left: 0; color: var(--accent); font-size: 12px; }
+.tag-line { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+h1 { font-size: clamp(28px, 4vw, 44px); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 12px; }
+h1 .accent { color: var(--accent); font-style: italic; font-weight: 400; }
+.subtitle { color: var(--text-1); max-width: 800px; font-size: 14px; }
+
+.grid { display: grid; grid-template-columns: 380px 1fr; gap: 24px; }
+@media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+
+.panel { background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--radius-lg);
+    padding: 24px; position: relative; }
+.panel-title { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--text-2); margin-bottom: 20px;
+    display: flex; align-items: center; gap: 8px; }
+.panel-title::before { content: ''; display: inline-block; width: 8px; height: 8px;
+    background: var(--accent); border-radius: 50%; }
+
+.field { margin-bottom: 18px; }
+.field label { display: block; font-size: 12px; color: var(--text-1); font-weight: 500;
+    margin-bottom: 6px; font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase; letter-spacing: 0.05em; }
+.field .hint { font-size: 11px; color: var(--text-2); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+
+input[type="number"], select {
+    width: 100%; background: var(--bg-2); border: 1px solid var(--line); color: var(--text-0);
+    padding: 9px 12px; border-radius: var(--radius); font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; transition: border-color 0.15s, background 0.15s;
+}
+input[type="number"]:focus, select:focus { outline: none; border-color: var(--accent); background: var(--bg-3); }
+select {
+    cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23a8aeba' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
+}
+.combo { display: grid; grid-template-columns: 1fr 88px; gap: 6px; }
+
+.slider-row { display: flex; align-items: center; gap: 12px; }
+.slider-row input[type="range"] { flex: 1; -webkit-appearance: none; appearance: none;
+    background: transparent; height: 32px; cursor: pointer; }
+.slider-row input[type="range"]::-webkit-slider-runnable-track {
+    height: 3px;
+    background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--p, 50%), var(--bg-3) var(--p, 50%));
+    border-radius: 3px;
+}
+.slider-row input[type="range"]::-moz-range-track { height: 3px; background: var(--bg-3); border-radius: 3px; }
+.slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 16px; height: 16px;
+    background: var(--accent); border-radius: 50%; margin-top: -7px;
+    box-shadow: 0 0 0 4px rgba(255,122,0,0.15); transition: transform 0.1s;
+}
+.slider-row input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+.slider-row input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px; background: var(--accent); border: none; border-radius: 50%;
+}
+.slider-value { font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    color: var(--accent); font-weight: 500; min-width: 52px; text-align: right; }
+
+button.primary {
+    width: 100%; background: var(--accent); color: #000; border: none; padding: 12px;
+    border-radius: var(--radius); font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;
+    transition: transform 0.1s, background 0.15s; margin-top: 8px;
+}
+button.primary:hover { background: #ff8c1f; transform: translateY(-1px); }
+button.primary:active { transform: translateY(0); }
+
+.section-divider { margin: 20px 0 16px; padding-top: 16px; border-top: 1px dashed var(--line);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--text-2); }
+.hidden { display: none !important; }
+
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); margin-bottom: 24px; overflow-x: auto; }
+.tab { background: transparent; border: none; color: var(--text-2); padding: 14px 20px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s; white-space: nowrap; }
+.tab:hover { color: var(--text-0); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; animation: fadeIn 0.25s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+.alert { background: var(--warn-bg); border-left: 3px solid var(--warn); padding: 12px 16px;
+    border-radius: var(--radius); margin-bottom: 16px; font-size: 13px;
+    display: flex; gap: 12px; align-items: flex-start; }
+.alert::before { content: '⚠'; color: var(--warn); font-size: 16px; line-height: 1.2; }
+.alert strong { color: var(--warn); }
+
+.result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-bottom: 24px; }
+.kpi { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px; position: relative; }
+.kpi-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-2); margin-bottom: 6px; }
+.kpi-value { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 500;
+    color: var(--text-0); line-height: 1; }
+.kpi-unit { font-size: 11px; color: var(--text-2); margin-left: 4px; }
+.kpi.highlight .kpi-value { color: var(--accent); }
+.kpi.warn .kpi-value { color: var(--warn); }
+
+table.states { width: 100%; border-collapse: collapse; margin-bottom: 24px;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+table.states th, table.states td { text-align: right; padding: 10px 16px;
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; border-bottom: 1px solid var(--line-soft); }
+table.states th { background: var(--bg-3); color: var(--text-2); font-weight: 500;
+    text-transform: uppercase; font-size: 10px; letter-spacing: 0.15em; text-align: right; }
+table.states th:first-child, table.states td:first-child { text-align: left; }
+table.states tr:last-child td { border-bottom: none; }
+table.states td.state-id { color: var(--accent); font-weight: 700; }
+
+.section { background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--radius-lg);
+    padding: 24px; margin-bottom: 16px; }
+.section h3 { font-size: 14px; font-weight: 500; letter-spacing: 0.05em; color: var(--text-0);
+    margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+    text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+.section h3::before { content: ''; width: 12px; height: 2px; background: var(--accent); }
+
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+.chart-wrap { background: var(--bg-1); border: 1px solid var(--line);
+    border-radius: var(--radius-lg); padding: 20px; }
+.chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.chart-title { font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-1); }
+.legend { display: flex; gap: 14px; font-size: 11px; font-family: 'JetBrains Mono', monospace; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 6px; color: var(--text-1); }
+.legend-swatch { width: 16px; height: 2px; }
+.legend-item.dashed .legend-swatch {
+    background: repeating-linear-gradient(to right, currentColor 0 3px, transparent 3px 6px); height: 2px; }
+
+.eq-section { margin-bottom: 28px; }
+.eq-section h4 { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+.eq { background: var(--bg-2); border-left: 2px solid var(--line); padding: 12px 16px;
+    margin-bottom: 8px; border-radius: 0 var(--radius) var(--radius) 0; overflow-x: auto; }
+.eq-desc { font-size: 12px; color: var(--text-1); margin-top: 6px; font-style: italic; }
+
+.dim-visual { display: flex; gap: 24px; align-items: center; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-top: 16px; }
+.dim-cyl { flex-shrink: 0; width: 100px; height: 140px; position: relative;
+    background: linear-gradient(to bottom, var(--bg-3), var(--bg-2));
+    border: 1px solid var(--line); border-radius: 4px; }
+.dim-cyl-piston { position: absolute; left: 4px; right: 4px; top: 50%; height: 20px;
+    background: var(--accent); border-radius: 2px;
+    box-shadow: 0 0 12px rgba(255,122,0,0.4); transition: top 0.3s ease; }
+.dim-data { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+<header>
+    <div class="tag-line">Thermodynamic Engineering Toolkit · v1.0</div>
+    <h1>Cálculo de Ciclos <span class="accent">Termodinámicos</span></h1>
+    <p class="subtitle">
+        Análisis de ciclos teóricos Otto, Diesel y Sabathé bajo la hipótesis de aire estándar frío.
+        Diseñado para automatizar el cálculo de performance y dimensionamiento de motores
+        alternativos según su misión definida. <strong style="color: var(--text-0);">Utilizar con mesura</strong>
+        a pesar de las alertas predefinidas del sistema.
+    </p>
+</header>
+
+<div class="grid">
+
+    <aside class="panel">
+        <div class="panel-title">Parámetros de Entrada</div>
+
+        <div class="field">
+            <label for="cycle">Ciclo termodinámico</label>
+            <select id="cycle">
+                <option value="otto">Otto</option>
+                <option value="diesel">Diesel</option>
+                <option value="sabathe">Sabathé</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="altitude">Altitud</label>
+            <div class="combo">
+                <input type="number" id="altitude" value="0" min="-500" max="20000" step="100">
+                <select id="altitudeUnit">
+                    <option value="m">m</option>
+                    <option value="ft">ft</option>
+                </select>
+            </div>
+            <div class="hint" id="atm-hint">ISA: T₁ = ─ K · p₁ = ─ kPa</div>
+        </div>
+
+        <div class="field">
+            <label for="k">Constante adiabática k</label>
+            <div class="slider-row">
+                <input type="range" id="k" min="1.30" max="1.40" step="0.001" value="1.40">
+                <div class="slider-value mono" id="k-val">1.400</div>
+            </div>
+        </div>
+
+        <div class="field">
+            <label for="fuel">Combustible</label>
+            <select id="fuel">
+                <option value="gasoline">Nafta (C₈H₁₈)</option>
+                <option value="diesel">Gasoil (C₁₂H₂₃)</option>
+                <option value="methane">Metano (CH₄)</option>
+                <option value="propane">Propano (C₃H₈)</option>
+                <option value="butane">Butano (C₄H₁₀)</option>
+                <option value="ethanol">Etanol (C₂H₆O)</option>
+                <option value="kerosene">Kerosén Jet-A1 (C₁₂H₂₆)</option>
+                <option value="hydrogen">Hidrógeno (H₂)</option>
+                <option value="custom">— Ingreso manual CₙHₘ —</option>
+            </select>
+        </div>
+
+        <div id="custom-fuel" class="hidden">
+            <div class="combo">
+                <div class="field" style="margin: 0;">
+                    <label for="nC">Carbonos (n)</label>
+                    <input type="number" id="nC" value="7" min="1" step="1">
+                </div>
+                <div class="field" style="margin: 0;">
+                    <label for="nH">Hidrógenos (m)</label>
+                    <input type="number" id="nH" value="16" min="0" step="1">
+                </div>
+            </div>
+            <div class="field" style="margin-top: 12px;">
+                <label for="PCI">PCI [MJ/kg]</label>
+                <input type="number" id="PCI" value="44.5" min="10" max="150" step="0.1">
+            </div>
+        </div>
+
+        <div class="field">
+            <label for="lambda">Relación de mezcla λ</label>
+            <input type="number" id="lambda" value="1.0" min="0.4" max="3.0" step="0.05">
+            <div class="hint">λ&gt;1: pobre · λ&lt;1: rica · λ=1: estequiométrica</div>
+        </div>
+
+        <div class="section-divider">Motor</div>
+
+        <div class="field">
+            <label for="r">Relación de compresión r</label>
+            <input type="number" id="r" value="10" min="2" max="30" step="0.1">
+        </div>
+
+        <div class="field">
+            <label for="nCyl">Cilindros</label>
+            <input type="number" id="nCyl" value="4" min="1" max="24" step="1">
+        </div>
+
+        <div class="field">
+            <label for="power">Potencia requerida</label>
+            <div class="combo">
+                <input type="number" id="power" value="100" min="1" step="1">
+                <select id="powerUnit">
+                    <option value="HP">HP</option>
+                    <option value="cv">cv</option>
+                    <option value="kW">kW</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="field">
+            <label for="rpm">Régimen [rpm]</label>
+            <input type="number" id="rpm" value="5000" min="500" max="20000" step="100">
+        </div>
+
+        <div class="field">
+            <label for="strokes">Tiempos</label>
+            <select id="strokes">
+                <option value="4">4 tiempos</option>
+                <option value="2">2 tiempos</option>
+            </select>
+        </div>
+
+        <div class="field" id="qv-field" style="display: none;">
+            <label for="qV">Q a V=cte (Sabathé) [kJ/kg]</label>
+            <input type="number" id="qV" value="800" min="0" step="10">
+            <div class="hint">Parte del calor aportado a V=cte; el resto se aporta a P=cte.</div>
+        </div>
+
+        <div class="section-divider">Geometría del pistón</div>
+
+        <div class="field">
+            <label for="sd">Relación carrera/diámetro S/D</label>
+            <div class="slider-row">
+                <input type="range" id="sd" min="0.5" max="1.5" step="0.01" value="1.0">
+                <div class="slider-value mono" id="sd-val">1.00</div>
+            </div>
+        </div>
+
+        <button class="primary" id="btn-calc">Calcular ▸</button>
+    </aside>
+
+    <main>
+        <div class="tabs">
+            <button class="tab active" data-tab="results">Resultados</button>
+            <button class="tab" data-tab="charts">Gráficos P-v / T-s</button>
+            <button class="tab" data-tab="equations">Ecuaciones</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-results">
+            <div id="alerts-container"></div>
+
+            <div class="section">
+                <h3>Indicadores principales</h3>
+                <div class="result-grid" id="kpi-grid"></div>
+            </div>
+
+            <div class="section">
+                <h3>Estados termodinámicos</h3>
+                <table class="states" id="states-table"></table>
+            </div>
+
+            <div class="section">
+                <h3>Dimensionamiento del motor</h3>
+                <div class="result-grid" id="sizing-grid"></div>
+                <div class="dim-visual">
+                    <div class="dim-cyl">
+                        <div class="dim-cyl-piston"></div>
+                    </div>
+                    <div class="dim-data" id="dim-data"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-panel" id="tab-charts">
+            <div class="chart-grid">
+                <div class="chart-wrap">
+                    <div class="chart-header">
+                        <div class="chart-title">Diagrama P-v</div>
+                    </div>
+                    <div id="chart-pv"></div>
+                </div>
+                <div class="chart-wrap">
+                    <div class="chart-header">
+                        <div class="chart-title">Diagrama T-s</div>
+                    </div>
+                    <div id="chart-ts"></div>
+                </div>
+            </div>
+            <div class="section" style="margin-top: 16px;">
+                <div class="legend">
+                    <div class="legend-item"><span class="legend-swatch" style="color: var(--otto); background: currentColor;"></span> Otto</div>
+                    <div class="legend-item"><span class="legend-swatch" style="color: var(--diesel); background: currentColor;"></span> Diesel</div>
+                    <div class="legend-item"><span class="legend-swatch" style="color: var(--sabathe); background: currentColor;"></span> Sabathé</div>
+                    <div class="legend-item dashed" style="color: var(--text-2); margin-left: 16px;"><span class="legend-swatch"></span> Ciclos no seleccionados (línea punteada)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-panel" id="tab-equations">
+            <div class="section">
+                <div class="eq-section">
+                    <h4>Atmósfera Estándar Internacional (ISA)</h4>
+                    <div class="eq">$$ T(h) = T_0 - L \cdot h \quad \text{(troposfera, h ≤ 11 km)} $$</div>
+                    <div class="eq">$$ p(h) = p_0 \left( \frac{T(h)}{T_0} \right)^{\frac{g_0}{R\,L}} $$</div>
+                    <div class="eq">$$ \rho = \frac{p}{R\,T} $$</div>
+                    <div class="eq-desc">T₀ = 288.15 K, p₀ = 101325 Pa, L = 0.0065 K/m, g₀ = 9.80665 m/s², R = 287.058 J/(kg·K)</div>
+                </div>
+
+                <div class="eq-section">
+                    <h4>Propiedades del aire (estándar frío)</h4>
+                    <div class="eq">$$ c_v = \frac{R}{k-1} \qquad c_p = k\,c_v \qquad R = 287.058 \; \tfrac{J}{kg\,K} $$</div>
+                </div>
+
+                <div class="eq-section">
+                    <h4>Combustión y calor aportado</h4>
+                    <div class="eq">$$ \text{C}_n\text{H}_m + \left(n + \tfrac{m}{4}\right)\text{O}_2 \rightarrow n\,\text{CO}_2 + \tfrac{m}{2}\,\text{H}_2\text{O} $$</div>
+                    <div class="eq">$$ AFR_{est} = \frac{(n + m/4)(1+3{,}76)\;M_{aire}}{M_{comb}} $$</div>
+                    <div class="eq">$$ AFR_{real} = \lambda \cdot AFR_{est} \qquad q_{in} = \frac{PCI}{AFR_{real}} \; \left[\tfrac{J}{kg\,aire}\right] $$</div>
+                </div>
+
+                <div class="eq-section">
+                    <h4>Ciclo Otto · 1→2 compresión, 2→3 Q a V=cte, 3→4 expansión, 4→1 rechazo</h4>
+                    <div class="eq">$$ T_2 = T_1\,r^{k-1} \qquad p_2 = p_1\,r^{k} $$</div>
+                    <div class="eq">$$ T_3 = T_2 + \frac{q_{in}}{c_v} \qquad p_3 = p_2 \frac{T_3}{T_2} $$</div>
+                    <div class="eq">$$ \eta_{Otto} = 1 - \frac{1}{r^{\,k-1}} $$</div>
+                </div>
+
+                <div class="eq-section">
+                    <h4>Ciclo Diesel · 2→3 Q a P=cte</h4>
+                    <div class="eq">$$ T_3 = T_2 + \frac{q_{in}}{c_p} \qquad r_c = \frac{v_3}{v_2} = \frac{T_3}{T_2} $$</div>
+                    <div class="eq">$$ \eta_{Diesel} = 1 - \frac{1}{r^{k-1}} \cdot \frac{r_c^{\,k} - 1}{k\,(r_c - 1)} $$</div>
+                </div>
+
+                <div class="eq-section">
+                    <h4>Ciclo Sabathé (dual) · 2→3 Q a V=cte, 3→4 Q a P=cte</h4>
+                    <div class="eq">$$ \alpha = \frac{p_3}{p_2} \qquad r_c = \frac{v_4}{v_3} $$</div>
+                    <div class="eq">$$ \eta_{Sab} = 1 - \frac{1}{r^{k-1}} \cdot \frac{\alpha\,r_c^{\,k} - 1}{(\alpha - 1) + k\,\alpha\,(r_c - 1)} $$</div>
+                </div>
+
+                <div class="eq-section">
+                    <h4>Trabajo, PME y dimensionamiento</h4>
+                    <div class="eq">$$ w_{net} = q_{in} - q_{out} \qquad PME = \frac{w_{net}}{v_1 - v_2} $$</div>
+                    <div class="eq">$$ V_{total} = \frac{P}{PME \cdot \frac{rpm}{60\,\tau}} \quad \text{con } \tau = \tfrac{\text{tiempos}}{2} $$</div>
+                    <div class="eq">$$ V_{unit} = \frac{\pi}{4}\,D^{2}\,S \qquad D = \sqrt[3]{\frac{4\,V_{unit}}{\pi\,(S/D)}} $$</div>
+                </div>
+
+                <div class="eq-section">
+                    <h4>Constantes y unidades de trabajo</h4>
+                    <div class="eq mono" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-1);">
+                        R<sub>aire</sub> = 287.058 J/(kg·K)<br>
+                        g₀ = 9.80665 m/s²<br>
+                        Internas: SI (Pa, K, m³/kg, J/kg) — Display: bar, K, m³/kg, kJ/kg<br>
+                        1 HP = 745.700 W &nbsp;·&nbsp; 1 cv = 735.499 W &nbsp;·&nbsp; 1 ft = 0.3048 m
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+</div>
+
+
+<script>
+'use strict';
+
+const CONST = Object.freeze({
+    R_UNIVERSAL: 8.31446, R_AIR: 287.058, M_AIR: 28.9647e-3,
+    G0: 9.80665, T0_ISA: 288.15, P0_ISA: 101325,
+    LAPSE_RATE: 0.0065, H_TROPO: 11000, T_TROPO: 216.65, P_TROPO: 22632.06,
+    H_STRATO2: 20000, M_TO_FT: 3.28084, FT_TO_M: 0.3048,
+    HP_TO_W: 745.6998715823, CV_TO_W: 735.49875,
+    BAR_TO_PA: 1e5, PA_TO_BAR: 1e-5,
+    PMAX_ALERT_BAR: 100, TMAX_ALERT_K: 4800
+});
+
+const FUELS = Object.freeze({
+    gasoline: { name: 'Nafta (C8H18)',  nC: 8,  nH: 18, PCI: 44.0e6 },
+    diesel:   { name: 'Gasoil (C12H23)',nC: 12, nH: 23, PCI: 42.5e6 },
+    methane:  { name: 'Metano (CH4)',   nC: 1,  nH: 4,  PCI: 50.0e6 },
+    propane:  { name: 'Propano (C3H8)', nC: 3,  nH: 8,  PCI: 46.4e6 },
+    butane:   { name: 'Butano (C4H10)', nC: 4,  nH: 10, PCI: 45.7e6 },
+    ethanol:  { name: 'Etanol (C2H6O)', nC: 2,  nH: 6,  nO: 1, PCI: 26.8e6 },
+    kerosene: { name: 'Kerosén Jet-A1', nC: 12, nH: 26, PCI: 43.0e6 },
+    hydrogen: { name: 'Hidrógeno (H2)', nC: 0,  nH: 2,  PCI: 120.0e6 }
+});
+
+function isaAtmosphere(h) {
+    let T, p;
+    if (h <= CONST.H_TROPO) {
+        T = CONST.T0_ISA - CONST.LAPSE_RATE * h;
+        const exp = CONST.G0 / (CONST.R_AIR * CONST.LAPSE_RATE);
+        p = CONST.P0_ISA * Math.pow(T / CONST.T0_ISA, exp);
+    } else {
+        T = CONST.T_TROPO;
+        const exp = -CONST.G0 * (h - CONST.H_TROPO) / (CONST.R_AIR * CONST.T_TROPO);
+        p = CONST.P_TROPO * Math.exp(exp);
+    }
+    return { T, p, rho: p / (CONST.R_AIR * T) };
+}
+
+function airProperties(k) {
+    const cv = CONST.R_AIR / (k - 1);
+    return { R: CONST.R_AIR, k, cv, cp: k * cv };
+}
+
+function stoichiometricAFR(fuel) {
+    const nC = fuel.nC || 0, nH = fuel.nH || 0, nO = fuel.nO || 0;
+    const nO2 = nC + nH / 4 - nO / 2;
+    const nAir = nO2 * (1 + 3.76);
+    const M_C = 12.011e-3, M_H = 1.008e-3, M_O = 15.999e-3;
+    const M_f = nC * M_C + nH * M_H + nO * M_O;
+    return (nAir * CONST.M_AIR) / M_f;
+}
+
+function heatInputPerKgAir(fuel, lambda) {
+    const AFR_st = stoichiometricAFR(fuel);
+    const AFR_real = AFR_st * lambda;
+    return { qIn: fuel.PCI / AFR_real, AFR_st, AFR_real };
+}
+
+function ottoCycle(s1, r, qIn, air) {
+    const { k, cv, R } = air, T1 = s1.T, p1 = s1.p, v1 = R * T1 / p1;
+    const v2 = v1 / r, T2 = T1 * Math.pow(r, k - 1), p2 = p1 * Math.pow(r, k);
+    const v3 = v2, T3 = T2 + qIn / cv, p3 = p2 * (T3 / T2);
+    const v4 = v1, T4 = T3 * Math.pow(v3 / v4, k - 1), p4 = p3 * Math.pow(v3 / v4, k);
+    const qOut = cv * (T4 - T1), wNet = qIn - qOut;
+    const eta = 1 - 1 / Math.pow(r, k - 1), pme = wNet / (v1 - v2);
+    return { cycle: 'Otto',
+        states: [{id:1,T:T1,p:p1,v:v1},{id:2,T:T2,p:p2,v:v2},{id:3,T:T3,p:p3,v:v3},{id:4,T:T4,p:p4,v:v4}],
+        qIn, qOut, wNet, eta, pme, Tmax: T3, pmax: p3, params: { r, k }
+    };
+}
+
+function dieselCycle(s1, r, qIn, air) {
+    const { k, cv, cp, R } = air, T1 = s1.T, p1 = s1.p, v1 = R * T1 / p1;
+    const v2 = v1 / r, T2 = T1 * Math.pow(r, k - 1), p2 = p1 * Math.pow(r, k);
+    const p3 = p2, T3 = T2 + qIn / cp, rc = T3 / T2, v3 = v2 * rc;
+    const v4 = v1, T4 = T3 * Math.pow(v3 / v4, k - 1), p4 = p3 * Math.pow(v3 / v4, k);
+    const qOut = cv * (T4 - T1), wNet = qIn - qOut;
+    const eta = 1 - (1 / Math.pow(r, k-1)) * ((Math.pow(rc,k) - 1) / (k * (rc - 1)));
+    const pme = wNet / (v1 - v2);
+    return { cycle: 'Diesel',
+        states: [{id:1,T:T1,p:p1,v:v1},{id:2,T:T2,p:p2,v:v2},{id:3,T:T3,p:p3,v:v3},{id:4,T:T4,p:p4,v:v4}],
+        qIn, qOut, wNet, eta, pme, Tmax: T3, pmax: p3, params: { r, rc, k }
+    };
+}
+
+function sabatheCycle(s1, r, qIn, qV, air) {
+    if (qV > qIn) qV = qIn;
+    const { k, cv, cp, R } = air, qP = qIn - qV;
+    const T1 = s1.T, p1 = s1.p, v1 = R * T1 / p1;
+    const v2 = v1 / r, T2 = T1 * Math.pow(r, k - 1), p2 = p1 * Math.pow(r, k);
+    const v3 = v2, T3 = T2 + qV / cv, p3 = p2 * (T3 / T2), alpha = p3 / p2;
+    const p4 = p3, T4 = T3 + qP / cp, rc = T4 / T3, v4 = v3 * rc;
+    const v5 = v1, T5 = T4 * Math.pow(v4 / v5, k - 1), p5 = p4 * Math.pow(v4 / v5, k);
+    const qOut = cv * (T5 - T1), wNet = qIn - qOut;
+    const eta = 1 - (1 / Math.pow(r, k-1)) *
+        ((alpha * Math.pow(rc,k) - 1) / (alpha - 1 + k * alpha * (rc - 1)));
+    const pme = wNet / (v1 - v2);
+    return { cycle: 'Sabathé',
+        states: [{id:1,T:T1,p:p1,v:v1},{id:2,T:T2,p:p2,v:v2},{id:3,T:T3,p:p3,v:v3},{id:4,T:T4,p:p4,v:v4},{id:5,T:T5,p:p5,v:v5}],
+        qIn, qOut, qV, qP, wNet, eta, pme, Tmax: T4, pmax: p3, params: { r, alpha, rc, k }
+    };
+}
+
+function engineSizing(pme, P_W, nCyl, rpm, strokes, S_over_D) {
+    const cps = rpm / (60 * (strokes / 2));
+    const V_total = P_W / (pme * cps), V_unit = V_total / nCyl;
+    const D = Math.cbrt(4 * V_unit / (Math.PI * S_over_D)), S = S_over_D * D;
+    return {
+        V_total_cc: V_total * 1e6, V_unit_cc: V_unit * 1e6,
+        D_mm: D * 1000, S_mm: S * 1000, S_over_D
+    };
+}
+
+function buildCurves(states, k, samples) {
+    samples = samples || 40;
+    const cv = CONST.R_AIR / (k - 1), cp = k * cv, R = CONST.R_AIR;
+    const n = states.length, pv = [], ts = [];
+    pv.push({ x: states[0].v, y: states[0].p });
+    ts.push({ x: 0, y: states[0].T });
+    let s_prev = 0;
+    for (let i = 0; i < n; i++) {
+        const A = states[i], B = states[(i + 1) % n];
+        const isV = Math.abs(A.v - B.v) / A.v < 1e-9;
+        const isP = Math.abs(A.p - B.p) / A.p < 1e-9;
+        const isS = !isV && !isP;
+        let s_end;
+        if (isS)      s_end = s_prev;
+        else if (isV) s_end = s_prev + cv * Math.log(B.T / A.T);
+        else          s_end = s_prev + cp * Math.log(B.T / A.T);
+        for (let j = 1; j <= samples; j++) {
+            const t = j / samples;
+            let v_t, p_t, T_t, s_t;
+            if (isS) {
+                v_t = A.v + (B.v - A.v) * t;
+                p_t = A.p * Math.pow(A.v / v_t, k);
+                T_t = p_t * v_t / R;
+                s_t = s_prev;
+            } else if (isV) {
+                v_t = A.v; T_t = A.T + (B.T - A.T) * t;
+                p_t = A.p * (T_t / A.T);
+                s_t = s_prev + cv * Math.log(T_t / A.T);
+            } else {
+                p_t = A.p; T_t = A.T + (B.T - A.T) * t;
+                v_t = R * T_t / p_t;
+                s_t = s_prev + cp * Math.log(T_t / A.T);
+            }
+            pv.push({ x: v_t, y: p_t });
+            ts.push({ x: s_t, y: T_t });
+        }
+        s_prev = s_end;
+    }
+    return { pv, ts };
+}
+
+const $ = id => document.getElementById(id);
+let pvChart = null, tsChart = null;
+
+function readInputs() {
+    const cycle = $('cycle').value;
+    const altRaw = parseFloat($('altitude').value);
+    const altU = $('altitudeUnit').value;
+    const altitude_m = altU === 'ft' ? altRaw * CONST.FT_TO_M : altRaw;
+    const k = parseFloat($('k').value);
+    const fuelKey = $('fuel').value;
+    let fuel;
+    if (fuelKey === 'custom') {
+        fuel = {
+            name: `C${$('nC').value}H${$('nH').value}`,
+            nC: parseInt($('nC').value, 10),
+            nH: parseInt($('nH').value, 10),
+            PCI: parseFloat($('PCI').value) * 1e6
+        };
+    } else {
+        fuel = FUELS[fuelKey];
+    }
+    const lambda = parseFloat($('lambda').value);
+    const r = parseFloat($('r').value);
+    const nCyl = parseInt($('nCyl').value, 10);
+    const power = parseFloat($('power').value);
+    const pU = $('powerUnit').value;
+    const power_W = pU === 'kW' ? power * 1000 : pU === 'cv' ? power * CONST.CV_TO_W : power * CONST.HP_TO_W;
+    const rpm = parseFloat($('rpm').value);
+    const strokes = parseInt($('strokes').value, 10);
+    const qV = parseFloat($('qV').value) * 1000;
+    const S_over_D = parseFloat($('sd').value);
+    return { cycle, altitude_m, k, fuel, lambda, r, nCyl, power_W, rpm, strokes, qV, S_over_D };
+}
+
+function compute(inp) {
+    const atm = isaAtmosphere(inp.altitude_m);
+    const air = airProperties(inp.k);
+    const { qIn, AFR_st, AFR_real } = heatInputPerKgAir(inp.fuel, inp.lambda);
+    const s1 = { T: atm.T, p: atm.p };
+
+    const otto = ottoCycle(s1, inp.r, qIn, air);
+    const diesel = dieselCycle(s1, inp.r, qIn, air);
+    const qV = isFinite(inp.qV) && inp.qV > 0 ? Math.min(inp.qV, qIn) : qIn * 0.5;
+    const sabathe = sabatheCycle(s1, inp.r, qIn, qV, air);
+
+    const active = inp.cycle === 'otto' ? otto : inp.cycle === 'diesel' ? diesel : sabathe;
+    const sizing = engineSizing(active.pme, inp.power_W, inp.nCyl, inp.rpm, inp.strokes, inp.S_over_D);
+
+    const alerts = [];
+    if (active.pmax * CONST.PA_TO_BAR > CONST.PMAX_ALERT_BAR) {
+        alerts.push(`Presión máxima ${(active.pmax * CONST.PA_TO_BAR).toFixed(1)} bar supera ${CONST.PMAX_ALERT_BAR} bar. Revisar los valores de entrada.`);
+    }
+    if (active.Tmax > CONST.TMAX_ALERT_K) {
+        alerts.push(`Temperatura máxima ${active.Tmax.toFixed(0)} K supera ${CONST.TMAX_ALERT_K} K. Revisar los valores de entrada.`);
+    }
+    return { atm, air, qIn, AFR_st, AFR_real, otto, diesel, sabathe, active, sizing, alerts, inp };
+}
+
+function fmt(x, d) { return Number.isFinite(x) ? x.toFixed(d) : '—'; }
+
+function renderAlerts(arr) {
+    $('alerts-container').innerHTML = arr.map(m =>
+        `<div class="alert"><div><strong>ALERTA</strong> · ${m}</div></div>`).join('');
+}
+
+function renderKPIs(R) {
+    const A = R.active;
+    const pmax_bar = A.pmax * CONST.PA_TO_BAR;
+    const warn_p = pmax_bar > CONST.PMAX_ALERT_BAR ? 'warn' : '';
+    const warn_T = A.Tmax > CONST.TMAX_ALERT_K ? 'warn' : '';
+    const tiles = [
+        { l: 'η rendimiento', v: fmt(A.eta * 100, 2), u: '%', cls: 'highlight' },
+        { l: 'PME', v: fmt(A.pme * CONST.PA_TO_BAR, 2), u: 'bar' },
+        { l: 'w_neto', v: fmt(A.wNet / 1000, 1), u: 'kJ/kg' },
+        { l: 'q_in', v: fmt(A.qIn / 1000, 1), u: 'kJ/kg' },
+        { l: 'q_out', v: fmt(A.qOut / 1000, 1), u: 'kJ/kg' },
+        { l: 'T_max', v: fmt(A.Tmax, 0), u: 'K', cls: warn_T },
+        { l: 'P_max', v: fmt(pmax_bar, 2), u: 'bar', cls: warn_p },
+        { l: 'AFR real', v: fmt(R.AFR_real, 2), u: '-' }
+    ];
+    $('kpi-grid').innerHTML = tiles.map(t =>
+        `<div class="kpi ${t.cls||''}">
+            <div class="kpi-label">${t.l}</div>
+            <div class="kpi-value">${t.v}<span class="kpi-unit">${t.u}</span></div>
+        </div>`
+    ).join('');
+}
+
+function renderStates(R) {
+    const rows = R.active.states.map(s => `
+        <tr>
+            <td class="state-id">${s.id}</td>
+            <td>${fmt(s.T, 2)}</td>
+            <td>${fmt(s.p * CONST.PA_TO_BAR, 4)}</td>
+            <td>${fmt(s.p / 1000, 3)}</td>
+            <td>${fmt(s.v, 5)}</td>
+        </tr>`).join('');
+    $('states-table').innerHTML = `
+        <thead><tr>
+            <th>Estado</th><th>T [K]</th><th>p [bar]</th><th>p [kPa]</th><th>v [m³/kg]</th>
+        </tr></thead><tbody>${rows}</tbody>`;
+}
+
+function renderSizing(R) {
+    const S = R.sizing;
+    const tiles = [
+        { l: 'Cilindrada total', v: fmt(S.V_total_cc, 1), u: 'cm³' },
+        { l: 'Cilindrada unit.', v: fmt(S.V_unit_cc, 1), u: 'cm³' },
+        { l: 'Diámetro D', v: fmt(S.D_mm, 2), u: 'mm' },
+        { l: 'Carrera S', v: fmt(S.S_mm, 2), u: 'mm' }
+    ];
+    $('sizing-grid').innerHTML = tiles.map(t =>
+        `<div class="kpi">
+            <div class="kpi-label">${t.l}</div>
+            <div class="kpi-value">${t.v}<span class="kpi-unit">${t.u}</span></div>
+        </div>`).join('');
+    $('dim-data').innerHTML = `
+        <div><div class="kpi-label">D</div><div class="mono" style="font-size:14px">${fmt(S.D_mm,2)} mm</div></div>
+        <div><div class="kpi-label">S</div><div class="mono" style="font-size:14px">${fmt(S.S_mm,2)} mm</div></div>
+        <div><div class="kpi-label">S/D</div><div class="mono" style="font-size:14px">${fmt(S.S_over_D,2)}</div></div>
+        <div><div class="kpi-label">Vu</div><div class="mono" style="font-size:14px">${fmt(S.V_unit_cc,1)} cm³</div></div>`;
+    const piston = document.querySelector('.dim-cyl-piston');
+    if (piston) {
+        const relS = Math.min(1.5, Math.max(0.5, S.S_over_D));
+        // Mapear S/D∈[0.5,1.5] a posición vertical (0..60% del cilindro)
+        const offset = (relS - 0.5) * 30;
+        piston.style.top = (30 + offset) + '%';
+    }
+}
+
+function chartOptions(xTitle, yTitle, series, activeKey) {
+    return {
+        chart: {
+            type: 'line', height: 400, background: 'transparent', foreColor: '#a8aeba',
+            toolbar: { show: false },
+            zoom: { enabled: true, type: 'xy' },
+            animations: { enabled: true, easing: 'easeOutCubic', speed: 400 }
+        },
+        theme: { mode: 'dark' },
+        series: series.map(s => ({ name: s.name, data: s.data })),
+        stroke: {
+            curve: 'straight',
+            width: series.map(s => s.isActive ? (s.isMarker ? 0 : 3) : 1.5),
+            dashArray: series.map(s => s.isActive ? 0 : 5)
+        },
+        colors: series.map(s => s.color),
+        markers: {
+            size: series.map(s => s.isMarker ? 7 : 0),
+            strokeColors: '#0c0d10', strokeWidth: 2,
+            hover: { sizeOffset: 3 }
+        },
+        dataLabels: {
+            enabled: true,
+            enabledOnSeries: series.map((s, i) => s.isMarker ? i : null).filter(x => x !== null),
+            formatter: (val, ctx) => {
+                const pt = series[ctx.seriesIndex].data[ctx.dataPointIndex];
+                return pt && pt.label !== undefined ? pt.label : '';
+            },
+            offsetY: -12,
+            style: { fontSize: '12px', fontFamily: 'JetBrains Mono', fontWeight: 700, colors: ['#fff'] },
+            background: {
+                enabled: true, foreColor: '#fff', padding: 4, borderRadius: 4,
+                borderWidth: 0, opacity: 0.95
+            }
+        },
+        xaxis: {
+            type: 'numeric',
+            title: { text: xTitle, style: { fontFamily: 'JetBrains Mono', fontSize: '11px', color: '#6c7280' } },
+            labels: {
+                style: { fontFamily: 'JetBrains Mono', fontSize: '10px', colors: '#6c7280' },
+                formatter: v => Number(v).toFixed(2)
+            },
+            axisBorder: { color: '#2e3340' },
+            axisTicks: { color: '#2e3340' }
+        },
+        yaxis: {
+            title: { text: yTitle, style: { fontFamily: 'JetBrains Mono', fontSize: '11px', color: '#6c7280' } },
+            labels: {
+                style: { fontFamily: 'JetBrains Mono', fontSize: '10px', colors: '#6c7280' },
+                formatter: v => Number(v).toFixed(0)
+            }
+        },
+        grid: {
+            borderColor: '#1f232b', strokeDashArray: 3,
+            xaxis: { lines: { show: true } }, yaxis: { lines: { show: true } }
+        },
+        legend: { show: false },
+        tooltip: {
+            theme: 'dark',
+            x: { formatter: v => Number(v).toFixed(4) },
+            y: { formatter: v => Number(v).toFixed(2) }
+        }
+    };
+}
+
+function makeSeries(R, mode) {
+    const defs = [
+        { key: 'otto',    name: 'Otto',    color: '#ff7a00', data: R.otto },
+        { key: 'diesel',  name: 'Diesel',  color: '#4d9bff', data: R.diesel },
+        { key: 'sabathe', name: 'Sabathé', color: '#00d4aa', data: R.sabathe }
+    ];
+    const activeKey = R.inp.cycle;
+    const series = [];
+
+    defs.forEach(c => {
+        const curves = buildCurves(c.data.states, R.inp.k, 60);
+        const pts = mode === 'pv'
+            ? curves.pv.map(p => ({ x: p.x, y: p.y * CONST.PA_TO_BAR }))
+            : curves.ts.map(p => ({ x: p.x, y: p.y }));
+        series.push({
+            name: c.name, color: c.color, data: pts,
+            isActive: c.key === activeKey, isMarker: false
+        });
+    });
+
+    // Marcadores numerados para el ciclo activo
+    const active = defs.find(c => c.key === activeKey);
+    if (active) {
+        const cv = CONST.R_AIR / (R.inp.k - 1), cp = R.inp.k * cv;
+        let s = 0;
+        const states = active.data.states;
+        const marks = [];
+        for (let i = 0; i < states.length; i++) {
+            if (i > 0) {
+                const A = states[i-1], B = states[i];
+                if (Math.abs(A.v - B.v) / A.v < 1e-9)      s += cv * Math.log(B.T / A.T);
+                else if (Math.abs(A.p - B.p) / A.p < 1e-9) s += cp * Math.log(B.T / A.T);
+            }
+            if (mode === 'pv') marks.push({ x: states[i].v, y: states[i].p * CONST.PA_TO_BAR, label: states[i].id });
+            else               marks.push({ x: s, y: states[i].T, label: states[i].id });
+        }
+        series.push({
+            name: active.name + ' · estados', color: active.color,
+            data: marks, isActive: true, isMarker: true
+        });
+    }
+    return series;
+}
+
+function renderCharts(R) {
+    if (pvChart) { pvChart.destroy(); pvChart = null; }
+    if (tsChart) { tsChart.destroy(); tsChart = null; }
+
+    const pvSeries = makeSeries(R, 'pv');
+    const tsSeries = makeSeries(R, 'ts');
+
+    pvChart = new ApexCharts($('chart-pv'),
+        chartOptions('v [m³/kg]', 'p [bar]', pvSeries, R.inp.cycle));
+    pvChart.render();
+
+    tsChart = new ApexCharts($('chart-ts'),
+        chartOptions('s − s₁ [J/(kg·K)]', 'T [K]', tsSeries, R.inp.cycle));
+    tsChart.render();
+}
+
+function updateAtmosphereHint() {
+    const altRaw = parseFloat($('altitude').value);
+    const altU = $('altitudeUnit').value;
+    const altitude_m = altU === 'ft' ? altRaw * CONST.FT_TO_M : altRaw;
+    if (altitude_m < -500 || altitude_m > 20000 || !isFinite(altitude_m)) {
+        $('atm-hint').textContent = 'ISA: fuera de rango';
+        return;
+    }
+    const atm = isaAtmosphere(altitude_m);
+    $('atm-hint').textContent =
+        `ISA: T₁ = ${atm.T.toFixed(2)} K · p₁ = ${(atm.p/1000).toFixed(3)} kPa`;
+}
+
+function updateSliderFill(input) {
+    const min = parseFloat(input.min), max = parseFloat(input.max);
+    const p = ((parseFloat(input.value) - min) / (max - min)) * 100;
+    input.style.setProperty('--p', p + '%');
+}
+
+function run() {
+    try {
+        const inp = readInputs();
+        if (!isFinite(inp.altitude_m) || inp.altitude_m < -500 || inp.altitude_m > 20000) return;
+        if (inp.lambda <= 0 || inp.r <= 1 || inp.nCyl < 1 || inp.power_W <= 0 || inp.rpm <= 0) return;
+        const R = compute(inp);
+        renderAlerts(R.alerts);
+        renderKPIs(R);
+        renderStates(R);
+        renderSizing(R);
+        renderCharts(R);
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            $('tab-' + btn.dataset.tab).classList.add('active');
+            if (btn.dataset.tab === 'charts' && (pvChart || tsChart)) {
+                setTimeout(() => {
+                    if (pvChart) pvChart.render();
+                    if (tsChart) tsChart.render();
+                }, 60);
+            }
+        });
+    });
+
+    $('fuel').addEventListener('change', e => {
+        $('custom-fuel').classList.toggle('hidden', e.target.value !== 'custom');
+    });
+    $('cycle').addEventListener('change', e => {
+        $('qv-field').style.display = e.target.value === 'sabathe' ? 'block' : 'none';
+    });
+
+    ['k', 'sd'].forEach(id => {
+        const inp = $(id);
+        const out = $(id + '-val');
+        const update = () => {
+            updateSliderFill(inp);
+            out.textContent = id === 'k' ? parseFloat(inp.value).toFixed(3) : parseFloat(inp.value).toFixed(2);
+        };
+        inp.addEventListener('input', () => { update(); run(); });
+        update();
+    });
+
+    ['altitude','altitudeUnit'].forEach(id => $(id).addEventListener('input', updateAtmosphereHint));
+    updateAtmosphereHint();
+
+    $('btn-calc').addEventListener('click', run);
+
+    ['cycle','altitude','altitudeUnit','fuel','nC','nH','PCI',
+     'lambda','r','nCyl','power','powerUnit','rpm','strokes','qV']
+     .forEach(id => $(id).addEventListener('change', run));
+
+    run();
+});
+</script>
+
+</body>
+</html>
